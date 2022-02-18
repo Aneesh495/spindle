@@ -1,0 +1,43 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+.ionide/
+*.swp
+*~
+
+# Test and coverage artifacts
+TestResults/
+coverage/
+*.trx
+
+# Build and package output
+*.nupkg
+*.snupkg
+*.log
+
+# Data and WAL temp files
+*.wal
+*.segment
+*.db
+*.db-shm
+*.db-wal
+data/
+wal/
+storage/
+
+# Python artifacts
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

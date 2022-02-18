@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors>FS0025,FS0026</WarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+    <Authors>Aneesh Krishna</Authors>
+    <Company>Spindle Project</Company>
+    <Product>Spindle Durable Execution Kernel</Product>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>
