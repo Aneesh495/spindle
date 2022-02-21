@@ -1,8 +1,7 @@
 <Project>
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <LangVersion>preview</LangVersion>
-    <Nullable>enable</Nullable>
+    <Nullable>annotations</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <WarningsAsErrors>FS0025,FS0026</WarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
