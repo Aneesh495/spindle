@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Domain.fs" />
+    <Compile Include="Metadata.fs" />
+    <Compile Include="Commands.fs" />
+    <Compile Include="Events.fs" />
+    <Compile Include="Codecs.fs" />
+    <Compile Include="Invariants.fs" />
+  </ItemGroup>
+
+</Project>
