@@ -17,19 +17,19 @@ module Codecs =
     let MagicBytes: uint32 = 0x53504E44u
     let CurrentFormatVersion: byte = 1uy
 
-    /// Standard System.Text.Json options configured with camelCase and enum converters.
+    /// Standard System.Text.Json options configured with camelCase and F# converters.
     let jsonOptions =
         let opts = JsonSerializerOptions()
         opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
         opts.WriteIndented <- false
-        opts.Converters.Add(JsonStringEnumConverter(JsonNamingPolicy.CamelCase))
+        opts.Converters.Add(JsonFSharpConverter())
         opts
 
     let jsonOptionsIndented =
         let opts = JsonSerializerOptions()
         opts.PropertyNamingPolicy <- JsonNamingPolicy.CamelCase
         opts.WriteIndented <- true
-        opts.Converters.Add(JsonStringEnumConverter(JsonNamingPolicy.CamelCase))
+        opts.Converters.Add(JsonFSharpConverter())
         opts
 
     /// Helper methods for JSON string and byte serialization.
