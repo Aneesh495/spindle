@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="WorkflowContext.fs" />
+    <Compile Include="WorkflowBuilder.fs" />
+    <Compile Include="Determinism.fs" />
+    <Compile Include="StateMachine.fs" />
+    <Compile Include="WorkflowInstance.fs" />
+    <Compile Include="Interceptors.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Spindle.Core\Spindle.Core.fsproj" />
+  </ItemGroup>
+
+</Project>
