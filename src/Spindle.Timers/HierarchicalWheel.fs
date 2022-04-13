@@ -75,18 +75,8 @@ type HierarchicalWheel(startTick: int64) =
         lock syncRoot (fun () ->
             let expiredList = ResizeArray<TimerEntry>()
             let slotIdx = int (currentTick &&& Level0Mask)
-            let slotEntries = level0.[slotIdx]
 
-            // Collect expired timers from Level 0
-            if slotEntries.Count > 0 then
-                for i = 0 to slotEntries.Count - 1 do
-                    let entry = slotEntries.[i]
-                    if not entry.IsCancelled then
-                        expiredList.Add(entry)
-                    activeTimerCount <- activeTimerCount - 1
-                slotEntries.Clear()
-
-            // Check if Level 0 made a full turn, requiring cascade from higher levels
+            // Check if Level 0 made a full turn, requiring cascade from higher levels BEFORE collecting Level 0
             if slotIdx = 0 && currentTick > startTick then
                 let l1Slot = int ((currentTick >>> Level0Bits) &&& LevelNMask)
                 cascade level1.[l1Slot]
@@ -102,6 +92,16 @@ type HierarchicalWheel(startTick: int64) =
                         if l3Slot = 0 then
                             let l4Slot = int ((currentTick >>> (Level0Bits + 3 * LevelNBits)) &&& LevelNMask)
                             cascade level4.[l4Slot]
+
+            // Collect expired timers from Level 0 for the current tick
+            let slotEntries = level0.[slotIdx]
+            if slotEntries.Count > 0 then
+                for i = 0 to slotEntries.Count - 1 do
+                    let entry = slotEntries.[i]
+                    if not entry.IsCancelled then
+                        expiredList.Add(entry)
+                    activeTimerCount <- activeTimerCount - 1
+                slotEntries.Clear()
 
             currentTick <- currentTick + 1L
             Seq.toList expiredList
