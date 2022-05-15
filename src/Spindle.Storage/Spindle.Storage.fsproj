@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="IStorageEngine.fs" />
+    <Compile Include="Crc32c.fs" />
+    <Compile Include="MemoryStorage.fs" />
+    <Compile Include="SegmentWal.fs" />
+    <Compile Include="SqliteStorage.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Spindle.Core\Spindle.Core.fsproj" />
+    <ProjectReference Include="..\Spindle.Engine\Spindle.Engine.fsproj" />
+  </ItemGroup>
+
+</Project>
