@@ -34,123 +34,100 @@ module WorkflowInstance =
     ) =
         let mutable currentHistory = initialHistory
         let mutable currentState = StateMachine.rebuildFromHistory workflowId runId initialHistory.Chronological
-        let mutable currentContinuation: (ExecutionContext -> WorkflowStep<'T>) option = None
         let mutable activeCompensations: (unit -> ExecutionContext -> WorkflowStep<unit>) list = []
 
-        let executeStep (ctx: ExecutionContext) : WorkflowCommand list =
-            let stepResult =
-                match currentContinuation with
-                | Some cont -> cont ctx
-                | None ->
-                    let wf = workflowDef ()
-                    wf ctx
+        let executeWorkflow () : WorkflowCommand list =
+            let ctx = ExecutionContext.Create(workflowId, runId, currentHistory)
+            let wf = workflowDef ()
 
-            match stepResult with
-            | WorkflowStep.Done(res, resCtx) ->
-                currentContinuation <- None
-                let resBytes = Spindle.Core.Codecs.Json.serializeToBytes res
-                let completeCmd = WorkflowCommand.CompleteWorkflow resBytes
-                let ts = clock ()
-                let rec1 = JournalRecord.Create(
-                    (match currentHistory.Events with [] -> SequenceNumber.Initial | h :: _ -> h.SequenceNumber.Next()),
-                    ts,
-                    WorkflowEvent.WorkflowExecutionCompleted resBytes,
-                    (match currentHistory.Events with [] -> 0u | h :: _ -> h.RecordHash)
-                )
-                currentHistory <- { currentHistory with Events = rec1 :: currentHistory.Events }
-                currentState <- StateMachine.transition currentState rec1
-                [ completeCmd ]
+            let rec stepToCommand (step: WorkflowStep<'T>) (currentCtx: ExecutionContext) : WorkflowCommand list =
+                match step with
+                | WorkflowStep.Done(res, resCtx) ->
+                    let resBytes = Spindle.Core.Codecs.Json.serializeToBytes res
+                    let completeCmd = WorkflowCommand.CompleteWorkflow resBytes
+                    let ts = clock ()
+                    let rec1 = JournalRecord.Create(
+                        (match currentHistory.Events with [] -> SequenceNumber.Initial | h :: _ -> h.SequenceNumber.Next()),
+                        ts,
+                        WorkflowEvent.WorkflowExecutionCompleted resBytes,
+                        (match currentHistory.Events with [] -> 0u | h :: _ -> h.RecordHash)
+                    )
+                    currentHistory <- { currentHistory with Events = rec1 :: currentHistory.Events }
+                    currentState <- StateMachine.transition currentState rec1
+                    [ completeCmd ]
 
-            | WorkflowStep.Yield(cmd, cont) ->
-                currentContinuation <- Some cont
-                [ cmd ]
+                | WorkflowStep.Yield(cmd, _) ->
+                    [ cmd ]
 
-            | WorkflowStep.Failed(failure, failCtx) ->
-                currentContinuation <- None
-                let failCmd = WorkflowCommand.FailWorkflow failure
-                let ts = clock ()
-                let rec1 = JournalRecord.Create(
-                    (match currentHistory.Events with [] -> SequenceNumber.Initial | h :: _ -> h.SequenceNumber.Next()),
-                    ts,
-                    WorkflowEvent.WorkflowExecutionFailed failure,
-                    (match currentHistory.Events with [] -> 0u | h :: _ -> h.RecordHash)
-                )
-                currentHistory <- { currentHistory with Events = rec1 :: currentHistory.Events }
-                currentState <- StateMachine.transition currentState rec1
-                [ failCmd ]
+                | WorkflowStep.Failed(failure, _) ->
+                    let failCmd = WorkflowCommand.FailWorkflow failure
+                    let ts = clock ()
+                    let rec1 = JournalRecord.Create(
+                        (match currentHistory.Events with [] -> SequenceNumber.Initial | h :: _ -> h.SequenceNumber.Next()),
+                        ts,
+                        WorkflowEvent.WorkflowExecutionFailed failure,
+                        (match currentHistory.Events with [] -> 0u | h :: _ -> h.RecordHash)
+                    )
+                    currentHistory <- { currentHistory with Events = rec1 :: currentHistory.Events }
+                    currentState <- StateMachine.transition currentState rec1
+                    [ failCmd ]
 
-            | WorkflowStep.RegisterCompensation(comp, cont) ->
-                activeCompensations <- comp :: activeCompensations
-                currentContinuation <- Some cont
-                // Re-evaluate continuation to advance to the next action
-                let nextCtx = { ctx with ReplayIndex = ctx.ReplayIndex + 1 }
-                cont nextCtx |> function
-                    | WorkflowStep.Done(res, c) ->
-                        currentContinuation <- None
-                        let resBytes = Spindle.Core.Codecs.Json.serializeToBytes res
-                        let completeCmd = WorkflowCommand.CompleteWorkflow resBytes
-                        [ completeCmd ]
-                    | WorkflowStep.Yield(cmd, cCont) ->
-                        currentContinuation <- Some cCont
-                        [ cmd ]
-                    | WorkflowStep.Failed(f, _) ->
-                        currentContinuation <- None
-                        [ WorkflowCommand.FailWorkflow f ]
-                    | WorkflowStep.RegisterCompensation(nestedComp, nCont) ->
-                        activeCompensations <- nestedComp :: activeCompensations
-                        currentContinuation <- Some nCont
-                        []
+                | WorkflowStep.RegisterCompensation(comp, cont, ctx') ->
+                    activeCompensations <- comp :: activeCompensations
+                    stepToCommand (cont ctx') ctx'
+
+            stepToCommand (wf ctx) ctx
 
         let mailbox = MailboxProcessor<InstanceMessage>.Start(fun inbox ->
             let rec loop () = async {
                 let! msg = inbox.Receive()
-                match msg with
-                | InstanceMessage.StepExecution reply ->
-                    let ctx = ExecutionContext.Create(workflowId, runId, currentHistory)
-                    let commands = executeStep ctx
-                    reply.Reply commands
-                    return! loop ()
+                try
+                    match msg with
+                    | InstanceMessage.StepExecution reply ->
+                        let commands = executeWorkflow ()
+                        reply.Reply commands
+                        return! loop ()
 
-                | InstanceMessage.ResolveActivity(actId, resultPayload, reply) ->
-                    let ts = clock ()
-                    let evt = WorkflowEvent.ActivityTaskCompleted(actId, resultPayload)
-                    currentHistory <- currentHistory.Append(evt, ts)
-                    currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
-                    let ctx = ExecutionContext.Create(workflowId, runId, currentHistory)
-                    let commands = executeStep ctx
-                    reply.Reply commands
-                    return! loop ()
+                    | InstanceMessage.ResolveActivity(actId, resultPayload, reply) ->
+                        let ts = clock ()
+                        let evt = WorkflowEvent.ActivityTaskCompleted(actId, resultPayload)
+                        currentHistory <- currentHistory.Append(evt, ts)
+                        currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
+                        let commands = executeWorkflow ()
+                        reply.Reply commands
+                        return! loop ()
 
-                | InstanceMessage.FailActivity(actId, failure, reply) ->
-                    let ts = clock ()
-                    let evt = WorkflowEvent.ActivityTaskFailed(actId, failure, 1, false)
-                    currentHistory <- currentHistory.Append(evt, ts)
-                    currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
-                    let ctx = ExecutionContext.Create(workflowId, runId, currentHistory)
-                    let commands = executeStep ctx
-                    reply.Reply commands
-                    return! loop ()
+                    | InstanceMessage.FailActivity(actId, failure, reply) ->
+                        let ts = clock ()
+                        let evt = WorkflowEvent.ActivityTaskFailed(actId, failure, 1, false)
+                        currentHistory <- currentHistory.Append(evt, ts)
+                        currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
+                        let commands = executeWorkflow ()
+                        reply.Reply commands
+                        return! loop ()
 
-                | InstanceMessage.FireTimer(tId, reply) ->
-                    let ts = clock ()
-                    let evt = WorkflowEvent.TimerFired(tId)
-                    currentHistory <- currentHistory.Append(evt, ts)
-                    currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
-                    let ctx = ExecutionContext.Create(workflowId, runId, currentHistory)
-                    let commands = executeStep ctx
-                    reply.Reply commands
-                    return! loop ()
+                    | InstanceMessage.FireTimer(tId, reply) ->
+                        let ts = clock ()
+                        let evt = WorkflowEvent.TimerFired(tId)
+                        currentHistory <- currentHistory.Append(evt, ts)
+                        currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
+                        let commands = executeWorkflow ()
+                        reply.Reply commands
+                        return! loop ()
 
-                | InstanceMessage.DeliverSignal(sigName, payload, reply) ->
-                    let ts = clock ()
-                    let evt = WorkflowEvent.WorkflowSignaled(sigName, payload)
-                    currentHistory <- currentHistory.Append(evt, ts)
-                    currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
-                    reply.Reply ()
-                    return! loop ()
+                    | InstanceMessage.DeliverSignal(sigName, payload, reply) ->
+                        let ts = clock ()
+                        let evt = WorkflowEvent.WorkflowSignaled(sigName, payload)
+                        currentHistory <- currentHistory.Append(evt, ts)
+                        currentState <- StateMachine.transition currentState (List.head currentHistory.Events)
+                        reply.Reply ()
+                        return! loop ()
 
-                | InstanceMessage.QuerySnapshot reply ->
-                    reply.Reply currentState
+                    | InstanceMessage.QuerySnapshot reply ->
+                        reply.Reply currentState
+                        return! loop ()
+                with ex ->
+                    printfn "WorkflowInstance Mailbox Exception: %s\n%s" ex.Message ex.StackTrace
                     return! loop ()
             }
             loop ()

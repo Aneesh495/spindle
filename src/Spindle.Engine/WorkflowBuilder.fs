@@ -17,7 +17,7 @@ module WorkflowBuilder =
         | Done of value: 'T * context: ExecutionContext
         | Yield of command: WorkflowCommand * continuation: (ExecutionContext -> WorkflowStep<'T>)
         | Failed of failure: FailureInfo * context: ExecutionContext
-        | RegisterCompensation of compensation: (unit -> ExecutionContext -> WorkflowStep<unit>) * continuation: (ExecutionContext -> WorkflowStep<'T>)
+        | RegisterCompensation of compensation: (unit -> ExecutionContext -> WorkflowStep<unit>) * continuation: (ExecutionContext -> WorkflowStep<'T>) * context: ExecutionContext
 
     /// Monadic workflow coroutine function type.
     type Workflow<'T> = ExecutionContext -> WorkflowStep<'T>
@@ -46,8 +46,8 @@ module WorkflowBuilder =
                 | WorkflowStep.Failed(failure, ctx') ->
                     WorkflowStep.Failed(failure, ctx')
 
-                | WorkflowStep.RegisterCompensation(comp, cont) ->
-                    WorkflowStep.RegisterCompensation(comp, fun ctx'' -> this.Bind(cont, f) ctx'')
+                | WorkflowStep.RegisterCompensation(comp, cont, ctx') ->
+                    WorkflowStep.RegisterCompensation(comp, (fun ctx'' -> this.Bind(cont, f) ctx''), ctx')
 
         member _.Delay(generator: unit -> Workflow<'T>) : Workflow<'T> =
             fun ctx -> generator () ctx
@@ -67,8 +67,8 @@ module WorkflowBuilder =
                         WorkflowStep.Yield(cmd, fun c' -> this.TryWith(cont, handler) c')
                     | WorkflowStep.Failed(fail, c) ->
                         WorkflowStep.Failed(fail, c)
-                    | WorkflowStep.RegisterCompensation(comp, cont) ->
-                        WorkflowStep.RegisterCompensation(comp, fun c' -> this.TryWith(cont, handler) c')
+                    | WorkflowStep.RegisterCompensation(comp, cont, c) ->
+                        WorkflowStep.RegisterCompensation(comp, (fun c' -> this.TryWith(cont, handler) c'), c)
                 with ex ->
                     handler ex ctx
 
@@ -84,8 +84,8 @@ module WorkflowBuilder =
                     | WorkflowStep.Failed(fail, c) ->
                         finalizer ()
                         WorkflowStep.Failed(fail, c)
-                    | WorkflowStep.RegisterCompensation(comp, cont) ->
-                        WorkflowStep.RegisterCompensation(comp, fun c' -> this.TryFinally(cont, finalizer) c')
+                    | WorkflowStep.RegisterCompensation(comp, cont, c) ->
+                        WorkflowStep.RegisterCompensation(comp, (fun c' -> this.TryFinally(cont, finalizer) c'), c)
                 with ex ->
                     finalizer ()
                     reraise ()
@@ -207,9 +207,9 @@ module WorkflowBuilder =
                         let compWf = compensationAction ()
                         compWf compCtx
 
-                WorkflowStep.RegisterCompensation(compWrapper, fun resumedCtx ->
+                WorkflowStep.RegisterCompensation(compWrapper, (fun resumedCtx ->
                     WorkflowStep.Done((), resumedCtx)
-                )
+                ), ctx)
 
         /// Returns the current deterministic virtual timestamp from the execution context.
         let now : Workflow<Timestamp> =
@@ -247,15 +247,15 @@ module WorkflowBuilder =
                                     | _ -> WorkflowStep.Failed(FailureInfo.Create("JoinFailure", "Unresolved parallel join"), c'')
                                 )
                             | WorkflowStep.Failed(f, c') -> WorkflowStep.Failed(f, c')
-                            | WorkflowStep.RegisterCompensation(comp, nCont) ->
-                                WorkflowStep.RegisterCompensation(comp, fun c' -> stepAll rest acc c')
+                            | WorkflowStep.RegisterCompensation(comp, nCont, c') ->
+                                WorkflowStep.RegisterCompensation(comp, (fun c'' -> stepAll rest acc c''), c')
                         )
                     | WorkflowStep.Failed(f, c) -> WorkflowStep.Failed(f, c)
-                    | WorkflowStep.RegisterCompensation(comp, cont) ->
-                        WorkflowStep.RegisterCompensation(comp, fun c ->
-                            match cont c with
-                            | WorkflowStep.Done(_, c') -> stepAll rest acc c'
-                            | _ -> stepAll rest acc c
-                        )
+                    | WorkflowStep.RegisterCompensation(comp, cont, c) ->
+                        WorkflowStep.RegisterCompensation(comp, (fun c' ->
+                            match cont c' with
+                            | WorkflowStep.Done(_, c'') -> stepAll rest acc c''
+                            | _ -> stepAll rest acc c'
+                        ), c)
 
             fun ctx -> stepAll workflows [] ctx
