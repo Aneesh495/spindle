@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SimTypes.fs" />
+    <Compile Include="ChaosEngine.fs" />
+    <Compile Include="SimCluster.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Spindle.Core\Spindle.Core.fsproj" />
+    <ProjectReference Include="..\Spindle.Engine\Spindle.Engine.fsproj" />
+    <ProjectReference Include="..\Spindle.Timers\Spindle.Timers.fsproj" />
+    <ProjectReference Include="..\Spindle.Queue\Spindle.Queue.fsproj" />
+    <ProjectReference Include="..\Spindle.Storage\Spindle.Storage.fsproj" />
+    <ProjectReference Include="..\Spindle.Cluster\Spindle.Cluster.fsproj" />
+  </ItemGroup>
+
+</Project>
