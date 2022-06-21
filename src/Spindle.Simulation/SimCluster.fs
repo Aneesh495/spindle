@@ -112,8 +112,29 @@ module SimCluster =
                 let inB2 = partitionB.Contains toN
                 not ((inA1 && inB2) || (inB1 && inA2))
 
+        /// Manually injects a specific fault into the simulation environment.
+        member _.InjectFault(fault: SimulatedFault) =
+            match fault with
+            | SimulatedFault.PartitionCluster (gA, gB) ->
+                partitionA <- Set.ofList gA
+                partitionB <- Set.ofList gB
+            | SimulatedFault.HealPartition ->
+                partitionA <- Set.empty
+                partitionB <- Set.empty
+            | SimulatedFault.CrashNode nid ->
+                match nodes.TryGetValue nid with
+                | true, n -> n.IsCrashed <- true
+                | _ -> ()
+            | SimulatedFault.RestartNode nid ->
+                match nodes.TryGetValue nid with
+                | true, n -> n.IsCrashed <- false
+                | _ -> ()
+            | SimulatedFault.DropMessage _ -> ()
+            | SimulatedFault.InjectDelay _ -> ()
+
         /// Advances the simulation clock by a single discrete tick.
         member this.Step() =
+            currentTick <- currentTick + 1L
             let now = Timestamp.FromUnixTimeMilliseconds (currentTick * config.VirtualTickDurationMs)
             let activeNodeIds =
                 nodes.Values
@@ -124,23 +145,7 @@ module SimCluster =
             // 1. Evaluate and apply chaos faults
             let faults = chaos.EvaluateFaults(currentTick, activeNodeIds)
             for fault in faults do
-                match fault with
-                | SimulatedFault.PartitionCluster (gA, gB) ->
-                    partitionA <- Set.ofList gA
-                    partitionB <- Set.ofList gB
-                | SimulatedFault.HealPartition ->
-                    partitionA <- Set.empty
-                    partitionB <- Set.empty
-                | SimulatedFault.CrashNode nid ->
-                    match nodes.TryGetValue nid with
-                    | true, n -> n.IsCrashed <- true
-                    | _ -> ()
-                | SimulatedFault.RestartNode nid ->
-                    match nodes.TryGetValue nid with
-                    | true, n -> n.IsCrashed <- false
-                    | _ -> ()
-                | SimulatedFault.DropMessage _ -> ()
-                | SimulatedFault.InjectDelay _ -> ()
+                this.InjectFault fault
 
             // 2. Deliver scheduled packets whose delivery tick has arrived
             let readyPackets = ResizeArray<ScheduledPacket>()
@@ -197,8 +202,6 @@ module SimCluster =
                                 Payload = r
                             }
                         | None -> ()
-
-            currentTick <- currentTick + 1L
 
         /// Send a message from one node to another through the simulated network switch.
         member _.RoutePacket(fromNode: NodeId, toNode: NodeId, msg: SwimMessage, delayTicks: int64) =
