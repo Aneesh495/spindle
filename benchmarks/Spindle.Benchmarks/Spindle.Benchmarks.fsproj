@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="BenchmarkTypes.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Spindle.Core\Spindle.Core.fsproj" />
+    <ProjectReference Include="..\..\src\Spindle.Engine\Spindle.Engine.fsproj" />
+    <ProjectReference Include="..\..\src\Spindle.Timers\Spindle.Timers.fsproj" />
+    <ProjectReference Include="..\..\src\Spindle.Queue\Spindle.Queue.fsproj" />
+    <ProjectReference Include="..\..\src\Spindle.Storage\Spindle.Storage.fsproj" />
+  </ItemGroup>
+
+</Project>
