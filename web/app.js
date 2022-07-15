@@ -1,192 +1,171 @@
-// Spindle Interactive Workflow Dashboard Controller
+// Browser event journal and saga walkthrough. Each graph is derived from the
+// prefix selected in the journal, so replay and forward execution agree.
 
-const API_BASE = "http://localhost:5000";
-
-let state = {
-    instances: [
-        {
-            id: "order-ord-8812",
-            type: "Order Fulfillment Saga",
-            status: "Running",
-            currentStep: 2,
-            events: [
-                { seq: 1, ts: "2026-10-22T07:26:46Z", type: "WorkflowExecutionStarted", summary: "Tenant: default", hash: "0xD0C57D00" },
-                { seq: 2, ts: "2026-10-22T07:26:47Z", type: "ActivityCompleted", summary: "AuthorizePayment ($249.99)", hash: "0xF6DD39C2" },
-                { seq: 3, ts: "2026-10-22T07:26:47Z", type: "ActivityCompleted", summary: "ReserveInventory (WH-WEST)", hash: "0x06F895E7" }
-            ],
-            steps: [
-                { name: "AuthorizePayment", status: "completed", compensation: "RefundPayment" },
-                { name: "ReserveInventory", status: "completed", compensation: "ReleaseInventory" },
-                { name: "DispatchCourier", status: "running", compensation: "CancelDispatch" },
-                { name: "FinalizeOrder", status: "pending", compensation: null }
-            ]
-        }
-    ],
-    selectedId: "order-ord-8812",
-    scrubIndex: 2
+const workflows = {
+    order_fulfillment: {
+        title: "Order fulfillment",
+        steps: [
+            ["Authorize payment", "Refund payment"],
+            ["Reserve inventory", "Release inventory"],
+            ["Dispatch courier", "Cancel dispatch"],
+            ["Finalize order", null]
+        ]
+    },
+    cloud_provisioning: {
+        title: "Cloud provisioning",
+        steps: [
+            ["Reserve capacity", "Release capacity"],
+            ["Create network", "Remove network"],
+            ["Deploy service", "Remove service"],
+            ["Verify health", null]
+        ]
+    },
+    settlement: {
+        title: "Financial settlement",
+        steps: [
+            ["Validate trade", null],
+            ["Reserve funds", "Release funds"],
+            ["Book settlement", "Reverse booking"],
+            ["Issue receipt", null]
+        ]
+    }
 };
+const state = { instances: [], selectedId: null, scrubIndex: 0 };
+const active = () => state.instances.find(instance => instance.id === state.selectedId);
+
+function append(instance, type, summary, step = null) {
+    instance.events.push({ seq: instance.events.length + 1, ts: new Date().toISOString(), type, summary, step });
+}
+
+function project(instance, count) {
+    const steps = workflows[instance.type].steps.map(([name, compensation], index) => ({
+        name, compensation, status: index === 0 ? "running" : "pending"
+    }));
+    let status = "Running";
+    for (const event of instance.events.slice(0, count)) {
+        if (event.type === "ActivityCompleted") {
+            steps[event.step].status = "completed";
+            if (steps[event.step + 1]) steps[event.step + 1].status = "running";
+        } else if (event.type === "ActivityFailed") {
+            steps[event.step].status = "failed";
+        } else if (event.type === "ActivityCompensated") {
+            steps[event.step].status = "compensated";
+        } else if (event.type === "WorkflowExecutionCompleted") {
+            status = "Completed";
+        } else if (event.type === "WorkflowCompensated") {
+            status = "Compensated";
+        }
+    }
+    return { status, steps };
+}
 
 function init() {
-    renderInstances();
-    renderActiveWorkflow();
-    setupEventListeners();
-}
-
-function setupEventListeners() {
     document.getElementById("btn-generate-id").addEventListener("click", () => {
-        const rand = Math.floor(1000 + Math.random() * 9000);
-        document.getElementById("wf-id-input").value = `order-ord-${rand}`;
+        document.getElementById("wf-id-input").value = `workflow-${state.instances.length + 1}`;
     });
-
     document.getElementById("btn-start-workflow").addEventListener("click", () => {
-        const wfType = document.getElementById("wf-type-select").value;
-        const wfId = document.getElementById("wf-id-input").value.trim() || `order-${Date.now()}`;
-        startWorkflow(wfType, wfId);
+        const type = document.getElementById("wf-type-select").value;
+        const input = document.getElementById("wf-id-input");
+        const id = input.value.trim() || `workflow-${state.instances.length + 1}`;
+        const notice = document.getElementById("workflow-notice");
+        if (state.instances.some(instance => instance.id === id)) {
+            notice.textContent = "That instance ID is already in use.";
+            input.focus();
+            return;
+        }
+        notice.textContent = "";
+        start(type, id);
+        input.value = "";
     });
-
-    document.getElementById("btn-step-wf").addEventListener("click", () => {
-        stepWorkflow();
+    document.getElementById("btn-step-wf").addEventListener("click", stepWorkflow);
+    document.getElementById("btn-simulate-failure").addEventListener("click", simulateFailure);
+    document.getElementById("timeline-slider").addEventListener("input", event => {
+        state.scrubIndex = Number(event.target.value);
+        renderActiveWorkflow();
     });
-
-    document.getElementById("btn-simulate-failure").addEventListener("click", () => {
-        simulateFailure();
-    });
-
-    const slider = document.getElementById("timeline-slider");
-    slider.addEventListener("input", (e) => {
-        const idx = parseInt(e.target.value, 10);
-        state.scrubIndex = idx;
-        document.getElementById("slider-step-indicator").textContent = `#${idx + 1}`;
-        renderJournalTable();
-    });
+    start("order_fulfillment", "order-ord-8812");
+    stepWorkflow();
+    stepWorkflow();
 }
 
-function startWorkflow(type, id) {
-    const newInst = {
-        id: id,
-        type: type === "order_fulfillment" ? "Order Fulfillment Saga" : "Financial Multi-Leg Settlement",
-        status: "Running",
-        currentStep: 0,
-        events: [
-            { seq: 1, ts: new Date().toISOString(), type: "WorkflowExecutionStarted", summary: `Type: ${type}`, hash: "0x89A120EF" }
-        ],
-        steps: [
-            { name: "AuthorizePayment", status: "running", compensation: "RefundPayment" },
-            { name: "ReserveInventory", status: "pending", compensation: "ReleaseInventory" },
-            { name: "DispatchCourier", status: "pending", compensation: "CancelDispatch" },
-            { name: "FinalizeOrder", status: "pending", compensation: null }
-        ]
-    };
-    state.instances.unshift(newInst);
+function start(type, id) {
+    const instance = { id, type, events: [] };
+    append(instance, "WorkflowExecutionStarted", workflows[type].title);
+    state.instances.unshift(instance);
     state.selectedId = id;
-    state.scrubIndex = 0;
+    showLatest(instance);
+}
+
+function showLatest(instance) {
+    state.scrubIndex = instance.events.length - 1;
     renderInstances();
     renderActiveWorkflow();
 }
 
 function stepWorkflow() {
-    const inst = state.instances.find(i => i.id === state.selectedId);
-    if (!inst || inst.status !== "Running") return;
-
-    if (inst.currentStep < inst.steps.length - 1) {
-        inst.steps[inst.currentStep].status = "completed";
-        inst.currentStep++;
-        inst.steps[inst.currentStep].status = "running";
-
-        const seq = inst.events.length + 1;
-        inst.events.push({
-            seq: seq,
-            ts: new Date().toISOString(),
-            type: "ActivityCompleted",
-            summary: `Step: ${inst.steps[inst.currentStep - 1].name}`,
-            hash: "0x" + Math.floor(Math.random() * 0xFFFFFFFF).toString(16).toUpperCase()
-        });
-    } else {
-        inst.steps[inst.currentStep].status = "completed";
-        inst.status = "Completed";
-        const seq = inst.events.length + 1;
-        inst.events.push({
-            seq: seq,
-            ts: new Date().toISOString(),
-            type: "WorkflowExecutionCompleted",
-            summary: "All steps fulfilled successfully",
-            hash: "0x" + Math.floor(Math.random() * 0xFFFFFFFF).toString(16).toUpperCase()
-        });
-    }
-
-    state.scrubIndex = inst.events.length - 1;
-    renderInstances();
-    renderActiveWorkflow();
+    const instance = active();
+    if (!instance) return;
+    const current = project(instance, instance.events.length);
+    const index = current.steps.findIndex(step => step.status === "running");
+    if (current.status !== "Running" || index < 0) return;
+    append(instance, "ActivityCompleted", current.steps[index].name, index);
+    if (index === current.steps.length - 1) append(instance, "WorkflowExecutionCompleted", "All activities completed");
+    showLatest(instance);
 }
 
 function simulateFailure() {
-    const inst = state.instances.find(i => i.id === state.selectedId);
-    if (!inst || inst.status !== "Running") return;
-
-    inst.status = "Compensating";
-    inst.steps[inst.currentStep].status = "failed";
-
-    const seq = inst.events.length + 1;
-    inst.events.push({
-        seq: seq,
-        ts: new Date().toISOString(),
-        type: "ActivityFailed",
-        summary: `Carrier Timeout on ${inst.steps[inst.currentStep].name}`,
-        hash: "0xE35C764F"
-    });
-
-    inst.events.push({
-        seq: seq + 1,
-        ts: new Date().toISOString(),
-        type: "SagaCompensationStarted",
-        summary: "LIFO compensation rollback initiated",
-        hash: "0xA98124BB"
-    });
-
-    inst.status = "Compensated";
-    state.scrubIndex = inst.events.length - 1;
-    renderInstances();
-    renderActiveWorkflow();
+    const instance = active();
+    if (!instance) return;
+    const current = project(instance, instance.events.length);
+    const index = current.steps.findIndex(step => step.status === "running");
+    if (current.status !== "Running" || index < 0) return;
+    append(instance, "ActivityFailed", current.steps[index].name, index);
+    for (let previous = index - 1; previous >= 0; previous--) {
+        const step = current.steps[previous];
+        if (step.compensation) append(instance, "ActivityCompensated", step.compensation, previous);
+    }
+    append(instance, "WorkflowCompensated", "Reverse-order compensation complete");
+    showLatest(instance);
 }
 
 function renderInstances() {
     const container = document.getElementById("instances-list");
-    container.innerHTML = "";
-
-    state.instances.forEach(inst => {
-        const item = document.createElement("div");
-        item.className = `instance-item ${inst.id === state.selectedId ? "active" : ""}`;
-        item.onclick = () => {
-            state.selectedId = inst.id;
-            state.scrubIndex = inst.events.length - 1;
-            renderInstances();
-            renderActiveWorkflow();
-        };
-
-        const badgeClass = `badge-${inst.status.toLowerCase()}`;
-        item.innerHTML = `
-            <div class="instance-item-header">
-                <span>${inst.id}</span>
-                <span class="status-badge ${badgeClass}">${inst.status}</span>
-            </div>
-            <div class="instance-item-details">${inst.type} &bull; ${inst.events.length} Events</div>
-        `;
+    container.replaceChildren();
+    for (const instance of state.instances) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "instance-item";
+        item.setAttribute("aria-pressed", String(instance.id === state.selectedId));
+        if (instance.id === state.selectedId) item.classList.add("active");
+        const title = document.createElement("strong");
+        title.textContent = instance.id;
+        const detail = document.createElement("span");
+        detail.className = "instance-item-details";
+        detail.textContent = `${workflows[instance.type].title} · ${project(instance, instance.events.length).status} · ${instance.events.length} events`;
+        item.append(title, detail);
+        item.addEventListener("click", () => {
+            state.selectedId = instance.id;
+            showLatest(instance);
+            container.querySelector('[aria-pressed="true"]')?.focus();
+        });
         container.appendChild(item);
-    });
+    }
 }
 
 function renderActiveWorkflow() {
-    const inst = state.instances.find(i => i.id === state.selectedId);
-    if (!inst) return;
-
-    document.getElementById("active-wf-title").textContent = `${inst.id} (${inst.type})`;
-
+    const instance = active();
+    if (!instance) return;
+    const count = state.scrubIndex + 1;
+    const frame = project(instance, count);
+    document.getElementById("active-wf-title").textContent = `${instance.id} · ${frame.status}`;
     const slider = document.getElementById("timeline-slider");
-    slider.max = inst.events.length - 1;
+    slider.max = instance.events.length - 1;
     slider.value = state.scrubIndex;
-    document.getElementById("slider-step-indicator").textContent = `#${state.scrubIndex + 1}`;
-
-    renderDag(inst);
+    document.getElementById("slider-step-indicator").textContent = `${count} / ${instance.events.length}`;
+    const canAdvance = count === instance.events.length && frame.status === "Running";
+    document.getElementById("btn-step-wf").disabled = !canAdvance;
+    document.getElementById("btn-simulate-failure").disabled = !canAdvance;
+    renderDag(frame);
     renderJournalTable();
 }
 
@@ -216,6 +195,7 @@ function renderDag(inst) {
         let fillColor = "#111827";
         if (step.status === "completed") { strokeColor = "#10b981"; fillColor = "rgba(16, 185, 129, 0.15)"; }
         else if (step.status === "running") { strokeColor = "#3b82f6"; fillColor = "rgba(59, 130, 246, 0.2)"; }
+        else if (step.status === "compensated") { strokeColor = "#f59e0b"; fillColor = "rgba(245,158,11,.15)"; }
         else if (step.status === "failed") { strokeColor = "#ef4444"; fillColor = "rgba(239, 68, 68, 0.2)"; }
 
         svg += `
@@ -240,32 +220,14 @@ function renderDag(inst) {
 }
 
 function renderJournalTable() {
-    const inst = state.instances.find(i => i.id === state.selectedId);
     const tbody = document.getElementById("journal-tbody");
-    tbody.innerHTML = "";
-
-    if (!inst) return;
-
-    const visibleEvents = inst.events.slice(0, state.scrubIndex + 1);
-    visibleEvents.forEach(evt => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>#${evt.seq}</td>
-            <td>${evt.ts}</td>
-            <td style="color: ${getEventColor(evt.type)}">${evt.type}</td>
-            <td style="color: #9ca3af">${evt.summary}</td>
-            <td style="color: #06b6d4">${evt.hash}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-function getEventColor(type) {
-    if (type.includes("Completed")) return "#10b981";
-    if (type.includes("Failed")) return "#ef4444";
-    if (type.includes("Started")) return "#3b82f6";
-    if (type.includes("Compensat")) return "#f59e0b";
-    return "#f9fafb";
+    tbody.replaceChildren();
+    for (const event of active().events.slice(0, state.scrubIndex + 1)) {
+        const row = tbody.insertRow();
+        for (const value of [event.seq, event.ts, event.type, event.summary]) {
+            row.insertCell().textContent = value;
+        }
+    }
 }
 
 document.addEventListener("DOMContentLoaded", init);

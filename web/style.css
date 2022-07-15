@@ -403,3 +403,16 @@ input[type="range"] {
     color: var(--accent-cyan);
     font-family: var(--font-mono);
 }
+
+.dashboard-grid { grid-template-columns: minmax(14rem, .9fr) minmax(0, 2.2fr) minmax(12rem, .8fr); }
+.dashboard-grid > * { min-width: 0; overflow-wrap: anywhere; }
+.instance-item { width: 100%; text-align: left; color: inherit; }
+.instance-item-details { display: block; }
+.graph-canvas { overflow: auto; }
+.panel:has(table) { overflow-x: auto; }
+.app-header, .card-header { flex-wrap: wrap; gap: .5rem; }
+button:disabled { opacity: .55; cursor: default; }
+a { color: #67e8f9; }
+@media (max-width: 900px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+}

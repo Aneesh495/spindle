@@ -20,7 +20,7 @@
                 <span class="status-dot"></span> Cluster Healthy (3 Nodes, 1024 Shards)
             </div>
             <div class="telemetry-pill">
-                <span class="label">Engine:</span> <strong id="telemetry-state">RUNNING</strong>
+                <span class="label">Mode:</span> <strong id="telemetry-state">BROWSER WALKTHROUGH</strong>
             </div>
         </div>
     </header>
@@ -34,18 +34,19 @@
                     <label for="wf-type-select">Workflow Type</label>
                     <select id="wf-type-select">
                         <option value="order_fulfillment">E-Commerce Order Fulfillment Saga</option>
-                        <option value="financial_settlement">Financial Multi-Leg Settlement</option>
+                        <option value="settlement">Financial Multi-Leg Settlement</option>
                         <option value="cloud_provisioning">Cloud Infrastructure Provisioning</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="wf-id-input">Workflow Identifier</label>
                     <div class="input-with-button">
-                        <input type="text" id="wf-id-input" value="order-ord-8812">
-                        <button id="btn-generate-id" class="btn-secondary" title="Generate New UUID">New</button>
+                        <input type="text" id="wf-id-input" maxlength="64" placeholder="workflow-2">
+                        <button id="btn-generate-id" class="btn-secondary" title="Suggest an instance ID">New</button>
                     </div>
                 </div>
                 <button id="btn-start-workflow" class="btn-primary">Launch Instance</button>
+                <p id="workflow-notice" role="status"></p>
             </div>
 
             <div class="panel-card list-card">
@@ -76,14 +77,14 @@
 
                 <div class="timeline-scrubber">
                     <span class="scrub-label">Event Scrubber:</span>
-                    <input type="range" id="timeline-slider" min="0" max="0" value="0">
+                    <input type="range" id="timeline-slider" aria-label="Replay through event" min="0" max="0" value="0">
                     <span id="slider-step-indicator" class="scrub-value">#0</span>
                 </div>
             </div>
 
             <div class="panel-card journal-card">
                 <div class="panel-header">
-                    <h2>Cryptographic Event Journal (Append-Only WAL)</h2>
+                    <h2>Event journal and replay</h2>
                     <span class="subtle-label">CRC32C Castagnoli Checksum Verification</span>
                 </div>
                 <div class="table-container">
@@ -94,7 +95,7 @@
                                 <th>Timestamp</th>
                                 <th>Event Type</th>
                                 <th>Payload Summary</th>
-                                <th>CRC32C Hash</th>
+
                             </tr>
                         </thead>
                         <tbody id="journal-tbody">
@@ -109,53 +110,11 @@
 
         <!-- Right Pane: Cluster Membership & Telemetry -->
         <aside class="cluster-pane">
-            <div class="panel-card">
-                <h2>SWIM Cluster Topology</h2>
-                <div id="cluster-nodes" class="cluster-nodes-list">
-                    <div class="node-item alive">
-                        <div class="node-header">
-                            <span class="node-id">spindle-node-1</span>
-                            <span class="node-badge">LEADER</span>
-                        </div>
-                        <div class="node-details">127.0.0.1:9001 &bull; Incarnation 1 &bull; 341 Shards</div>
-                    </div>
-                    <div class="node-item alive">
-                        <div class="node-header">
-                            <span class="node-id">spindle-node-2</span>
-                            <span class="node-badge">FOLLOWER</span>
-                        </div>
-                        <div class="node-details">127.0.0.1:9002 &bull; Incarnation 1 &bull; 341 Shards</div>
-                    </div>
-                    <div class="node-item alive">
-                        <div class="node-header">
-                            <span class="node-id">spindle-node-3</span>
-                            <span class="node-badge">FOLLOWER</span>
-                        </div>
-                        <div class="node-details">127.0.0.1:9003 &bull; Incarnation 1 &bull; 342 Shards</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="panel-card">
-                <h2>Engine Telemetry</h2>
-                <div class="telemetry-grid">
-                    <div class="telemetry-metric">
-                        <span class="metric-title">Throughput</span>
-                        <span class="metric-value" id="metric-throughput">1.2M evt/s</span>
-                    </div>
-                    <div class="telemetry-metric">
-                        <span class="metric-title">Wheel Latency</span>
-                        <span class="metric-value" id="metric-wheel">18 ns</span>
-                    </div>
-                    <div class="telemetry-metric">
-                        <span class="metric-title">Memory Allocation</span>
-                        <span class="metric-value" id="metric-mem">18.4 MB</span>
-                    </div>
-                    <div class="telemetry-metric">
-                        <span class="metric-title">Active Shards</span>
-                        <span class="metric-value" id="metric-shards">1,024</span>
-                    </div>
-                </div>
+            <div class="panel">
+                <h2>How replay works</h2>
+                <p>Each event changes the workflow state. Scrub the journal to reconstruct an earlier decision. Trigger a fault to see completed activities compensate in reverse order.</p>
+                <p>The browser keeps its journal in memory. Spindle's F# engine persists the journal and coordinates execution across workers.</p>
+                <p><a href="https://github.com/Aneesh495/spindle/tree/main/docs">Engine design and evidence</a></p>
             </div>
         </aside>
     </main>
