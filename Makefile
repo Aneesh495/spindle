@@ -25,3 +25,9 @@ run-cli:
 
 run-server:
 	dotnet run -c Release --project src/Spindle.Server
+
+demo:
+	dotnet run -c Release --project src/Spindle.Cli -- demo
+
+worker:
+	python3 clients/python/example_worker.py
